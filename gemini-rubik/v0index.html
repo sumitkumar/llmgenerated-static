@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Rubik's Cube</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 20px;
+            background-color: #f0f0f0;
+        }
+
+        .scene {
+            width: 200px;
+            height: 200px;
+            perspective: 600px; /* Increase for less dramatic perspective */
+            margin: 50px;
+        }
+
+        .cube {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transform: translateZ(-50px) rotateX(-30deg) rotateY(-45deg); /* Initial view */
+            transition: transform 0.5s; /* Smooth transition for cube rotation */
+        }
+
+        .face {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            background-color: rgba(50, 50, 50, 0.8); /* Cube body color */
+            border: 1px solid #333;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 2px; /* Gap between facelets */
+            padding: 2px; /* Padding to make gaps visible */
+        }
+
+        /* Position the faces */
+        .front  { transform: rotateY(  0deg) translateZ(50px); }
+        .back   { transform: rotateY(180deg) translateZ(50px); }
+        .right  { transform: rotateY( 90deg) translateZ(50px); }
+        .left   { transform: rotateY(-90deg) translateZ(50px); }
+        .top    { transform: rotateX( 90deg) translateZ(50px); }
+        .bottom { transform: rotateX(-90deg) translateZ(50px); }
+
+        .facelet {
+            background-color: gray; /* Default/placeholder */
+            border: 1px solid black;
+        }
+
+        /* Standard Rubik's Colors */
+        .color-W { background-color: white; }
+        .color-Y { background-color: yellow; }
+        .color-B { background-color: blue; }
+        .color-G { background-color: green; }
+        .color-R { background-color: red; }
+        .color-O { background-color: orange; } /* Or DarkOrange */
+
+        .controls {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: repeat(6, auto);
+            gap: 5px;
+            max-width: 500px;
+        }
+
+        .controls button {
+            padding: 8px 12px;
+            font-size: 1em;
+            cursor: pointer;
+        }
+
+        .controls-main {
+             margin-top: 10px;
+        }
+        .controls-main button {
+            padding: 10px 20px;
+            font-size: 1.1em;
+            margin: 0 10px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Simple Rubik's Cube</h1>
+
+    <div class="scene">
+        <div class="cube">
+            <div class="face front"></div>
+            <div class="face back"></div>
+            <div class="face right"></div>
+            <div class="face left"></div>
+            <div class="face top"></div>
+            <div class="face bottom"></div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button onclick="applyMove('U')">U</button>
+        <button onclick="applyMove('U\'')">U'</button>
+        <button onclick="applyMove('L')">L</button>
+        <button onclick="applyMove('L\'')">L'</button>
+        <button onclick="applyMove('F')">F</button>
+        <button onclick="applyMove('F\'')">F'</button>
+        <button onclick="applyMove('D')">D</button>
+        <button onclick="applyMove('D\'')">D'</button>
+        <button onclick="applyMove('R')">R</button>
+        <button onclick="applyMove('R\'')">R'</button>
+        <button onclick="applyMove('B')">B</button>
+        <button onclick="applyMove('B\'')">B'</button>
+        </div>
+     <div class="controls-main">
+        <button onclick="undoMove()">Undo</button>
+        <button onclick="resetCube()">Reset</button>
+    </div>
+
+    <script>
+        const faces = {
+            front: document.querySelector('.face.front'),
+            back: document.querySelector('.face.back'),
+            right: document.querySelector('.face.right'),
+            left: document.querySelector('.face.left'),
+            top: document.querySelector('.face.top'),
+            bottom: document.querySelector('.face.bottom'),
+        };
+
+        // State representation: U, R, F, D, L, B faces
+        // Colors: W=White(Up), Y=Yellow(Down), B=Blue(Front), G=Green(Back), R=Red(Right), O=Orange(Left)
+        // Each array represents the facelets read top-to-bottom, left-to-right
+        let cubeState = {};
+        let history = []; // To store moves for undo
+
+        const solvedState = {
+            top:    ['W', 'W', 'W', 'W', 'W', 'W', 'W', 'W', 'W'], // White
+            bottom: ['Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'], // Yellow
+            front:  ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'], // Blue
+            back:   ['G', 'G', 'G', 'G', 'G', 'G', 'G', 'G', 'G'], // Green
+            left:   ['O', 'O', 'O', 'O', 'O', 'O', 'O', 'O', 'O'], // Orange
+            right:  ['R', 'R', 'R', 'R', 'R', 'R', 'R', 'R', 'R']  // Red
+        };
+
+        // --- Helper Functions ---
+
+        // Deep copy state to avoid mutation issues
+        function deepCopyState(state) {
+            return JSON.parse(JSON.stringify(state));
+        }
+
+        // Rotate the 9 facelets of a single face clockwise
+        function rotateFaceCW(face) {
+            const temp = face.slice(); // Copy face
+            face[0] = temp[6]; face[1] = temp[3]; face[2] = temp[0];
+            face[3] = temp[7];                    face[5] = temp[1];
+            face[6] = temp[8]; face[7] = temp[5]; face[8] = temp[2];
+        }
+
+        // Rotate the 9 facelets of a single face counter-clockwise
+        function rotateFaceCCW(face) {
+            const temp = face.slice(); // Copy face
+            face[0] = temp[2]; face[1] = temp[5]; face[2] = temp[8];
+            face[3] = temp[1];                    face[5] = temp[7];
+            face[6] = temp[0]; face[7] = temp[3]; face[8] = temp[6];
+        }
+
+        // --- Move Logic ---
+        // This is the complex part, defining how colors move between faces
+
+        function moveU() {
+            rotateFaceCW(cubeState.top);
+            const temp = cubeState.front.slice(0, 3);
+            cubeState.front.splice(0, 3, ...cubeState.right.slice(0, 3));
+            cubeState.right.splice(0, 3, ...cubeState.back.slice(0, 3));
+            cubeState.back.splice(0, 3, ...cubeState.left.slice(0, 3));
+            cubeState.left.splice(0, 3, ...temp);
+        }
+        function moveUPrime() { moveU(); moveU(); moveU(); } // Simple way to implement inverse
+
+        function moveD() {
+            rotateFaceCW(cubeState.bottom);
+            const temp = cubeState.front.slice(6, 9);
+            cubeState.front.splice(6, 9, ...cubeState.left.slice(6, 9));
+            cubeState.left.splice(6, 9, ...cubeState.back.slice(6, 9));
+            cubeState.back.splice(6, 9, ...cubeState.right.slice(6, 9));
+            cubeState.right.splice(6, 9, ...temp);
+        }
+        function moveDPrime() { moveD(); moveD(); moveD(); }
+
+        function moveR() {
+            rotateFaceCW(cubeState.right);
+            const temp = [cubeState.top[2], cubeState.top[5], cubeState.top[8]];
+            cubeState.top[2] = cubeState.front[2]; cubeState.top[5] = cubeState.front[5]; cubeState.top[8] = cubeState.front[8];
+            cubeState.front[2] = cubeState.bottom[2]; cubeState.front[5] = cubeState.bottom[5]; cubeState.front[8] = cubeState.bottom[8];
+            // Back face indices are tricky due to perspective: 0,3,6 correspond to the right edge when viewed from front
+            cubeState.bottom[2] = cubeState.back[6]; cubeState.bottom[5] = cubeState.back[3]; cubeState.bottom[8] = cubeState.back[0];
+            cubeState.back[6] = temp[0]; cubeState.back[3] = temp[1]; cubeState.back[0] = temp[2];
+        }
+         function moveRPrime() { moveR(); moveR(); moveR(); }
+
+        function moveL() {
+            rotateFaceCW(cubeState.left);
+            const temp = [cubeState.top[0], cubeState.top[3], cubeState.top[6]];
+            cubeState.top[0] = cubeState.back[8]; cubeState.top[3] = cubeState.back[5]; cubeState.top[6] = cubeState.back[2];
+            // Back face indices: 8,5,2 correspond to the left edge when viewed from front
+            cubeState.back[8] = cubeState.bottom[6]; cubeState.back[5] = cubeState.bottom[3]; cubeState.back[2] = cubeState.bottom[0];
+            cubeState.bottom[0] = cubeState.front[0]; cubeState.bottom[3] = cubeState.front[3]; cubeState.bottom[6] = cubeState.front[6];
+            cubeState.front[0] = temp[0]; cubeState.front[3] = temp[1]; cubeState.front[6] = temp[2];
+        }
+        function moveLPrime() { moveL(); moveL(); moveL(); }
+
+        function moveF() {
+            rotateFaceCW(cubeState.front);
+            const temp = cubeState.top.slice(6, 9);
+            // Indices: T6,T7,T8 -> R0,R3,R6 -> D2,D1,D0 -> L8,L5,L2 -> T6,T7,T8
+            cubeState.top[6] = cubeState.left[8]; cubeState.top[7] = cubeState.left[5]; cubeState.top[8] = cubeState.left[2];
+            cubeState.left[2] = cubeState.bottom[0]; cubeState.left[5] = cubeState.bottom[1]; cubeState.left[8] = cubeState.bottom[2]; // Bottom reversed order
+            cubeState.bottom[0] = cubeState.right[6]; cubeState.bottom[1] = cubeState.right[3]; cubeState.bottom[2] = cubeState.right[0]; // Right reversed order
+            cubeState.right[0] = temp[0]; cubeState.right[3] = temp[1]; cubeState.right[6] = temp[2];
+        }
+        function moveFPrime() { moveF(); moveF(); moveF(); }
+
+        function moveB() {
+            rotateFaceCW(cubeState.back);
+             const temp = cubeState.top.slice(0, 3); // T0, T1, T2
+            // Indices: T0,T1,T2 -> L0,L3,L6 -> D8,D7,D6 -> R8,R5,R2 -> T0,T1,T2
+            cubeState.top[0] = cubeState.right[2]; cubeState.top[1] = cubeState.right[5]; cubeState.top[2] = cubeState.right[8];
+            cubeState.right[2] = cubeState.bottom[8]; cubeState.right[5] = cubeState.bottom[7]; cubeState.right[8] = cubeState.bottom[6]; // Bottom reversed
+            cubeState.bottom[6] = cubeState.left[0]; cubeState.bottom[7] = cubeState.left[3]; cubeState.bottom[8] = cubeState.left[6]; // Left reversed
+            cubeState.left[0] = temp[2]; cubeState.left[3] = temp[1]; cubeState.left[6] = temp[0]; // Temp reversed
+        }
+        function moveBPrime() { moveB(); moveB(); moveB(); }
+
+        // Map move strings to functions
+        const moveFunctions = {
+            'U': moveU, 'U\'': moveUPrime,
+            'D': moveD, 'D\'': moveDPrime,
+            'R': moveR, 'R\'': moveRPrime,
+            'L': moveL, 'L\'': moveLPrime,
+            'F': moveF, 'F\'': moveFPrime,
+            'B': moveB, 'B\'': moveBPrime,
+        };
+
+        // --- Main Functions ---
+
+        // Apply a move and update display
+        function applyMove(move) {
+            if (!moveFunctions[move]) return;
+
+            // Store previous state for undo (simple one-level undo)
+             history.push(move); // Store the move made
+
+            // Execute the move function
+            moveFunctions[move]();
+
+            // Update the visual representation
+            renderCube();
+
+            // Add animation class (basic rotation attempt - might look jerky)
+            /*
+            const cubeElement = document.querySelector('.cube');
+            cubeElement.classList.add('rotating'); // Add class for animation
+            setTimeout(() => {
+                cubeElement.classList.remove('rotating'); // Remove after animation time
+            }, 500); // Match CSS transition time
+            */
+            // NOTE: Proper animation would involve identifying moving pieces
+            // and rotating only that slice, which is much more complex.
+        }
+
+        // Undo the last move
+        function undoMove() {
+            if (history.length === 0) return;
+
+            const lastMove = history.pop();
+            let inverseMove = '';
+
+            if (lastMove.includes("'")) {
+                inverseMove = lastMove.replace("'", ""); // U' -> U
+            } else {
+                inverseMove = lastMove + "'"; // U -> U'
+            }
+
+            // Apply the inverse move without adding it to history
+             if (!moveFunctions[inverseMove]) return;
+             moveFunctions[inverseMove]();
+             renderCube();
+
+        }
+
+
+        // Reset cube to solved state
+        function resetCube() {
+            cubeState = deepCopyState(solvedState);
+            history = []; // Clear history
+            renderCube();
+            console.log("Cube Reset");
+        }
+
+        // Render the current cubeState onto the HTML elements
+        function renderCube() {
+            for (const faceName in cubeState) {
+                const faceElement = faces[faceName];
+                faceElement.innerHTML = ''; // Clear previous facelets
+                cubeState[faceName].forEach(color => {
+                    const facelet = document.createElement('div');
+                    facelet.classList.add('facelet', `color-${color}`);
+                    faceElement.appendChild(facelet);
+                });
+            }
+            // console.log("Cube Rendered", cubeState);
+        }
+
+        // --- Initial Setup ---
+        resetCube(); // Initialize with solved state
+
+    </script>
+
+</body>
+</html>
